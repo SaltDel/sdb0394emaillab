@@ -1,50 +1,56 @@
+
 // api/send-email.js
+import { waitUntil } from '@vercel/functions';
 
 export default async function handler(req, res) {
-  // Enforce POST method for test compatibility
+  // 1. Only allow POST requests
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  try {
-    // Explicit hardcoded string configuration to bypass JavaScript dot notation errors
-    const AUTH_HEADER = "Bearer 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";
+  if (!req.body) {
+    return res.status(400).json({ error: 'Missing request body' });
+  }
 
-    const sendgridResponse = await fetch('https://sendgrid.com', {
+  const { to, subject, text, euid } = req.body;
+
+  // 2. Simple validation
+  if (!to || !subject || !text || !euid) {
+    return res.status(400).json({ error: 'Missing required fields (to, subject, text, euid)' });
+  }
+
+  // 3. Append EUID to the email body
+  const structuredBody = `${text}\n\n---\nTest Event ${euid}`;
+
+  // 4. Trigger the SendGrid API inside a background task
+  waitUntil(
+    fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`,
         'Content-Type': 'application/json',
-        'Authorization': AUTH_HEADER
       },
       body: JSON.stringify({
-        personalizations: [
-          {
-            to: [{ email: 'Salmabankole@gmail.com' }]
-          }
-        ],
-        from: { email: 'sandybeach1084@gmail.com' }, 
-        subject: 'Serverless Verified - SDB0394EVENTTESTEVENT', 
-        content: [
-          {
-            type: 'text/plain',
-            value: 'Serverless deployment completed successfully outside of AWS/Azure.'
-          }
-        ]
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: process.env.SENDER_EMAIL },
+        subject: subject,
+        content: [{ type: 'text/plain', value: structuredBody }],
+      }),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const errText = await response.text();
+          console.error(`SendGrid API Error (${response.status}):`, errText);
+        } else {
+          console.log('Email sent successfully via SendGrid.');
+        }
       })
-    });
+      .catch((err) => console.error('Network error during SendGrid dispatch:', err))
+  );
 
-    if (sendgridResponse.ok) {
-      console.log('Email successfully accepted by SendGrid.');
-      return res.status(200).json({ success: true, message: 'Email successfully accepted by SendGrid.' });
-    } else {
-      const errorText = await sendgridResponse.text();
-      console.error('SendGrid error status:', sendgridResponse.status);
-      console.error('SendGrid response body:', errorText);
-      return res.status(sendgridResponse.status).json({ error: errorText });
-    }
-
-  } catch (error) {
-    console.error('Runtime processing error:', error);
-    return res.status(500).json({ error: 'Internal Server Error', details: error.message });
-  }
+  // 5. Instantly return a 202 Accepted status to the client
+  return res.status(202).json({
+    success: true,
+    message: 'Asynchronous email dispatch initialized.',
+  });
 }
