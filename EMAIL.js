@@ -2,7 +2,7 @@ const sendgridResponse = await fetch('https://api.sendgrid.com/v3/mail/send', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`
+    'Authorization': `Bearer ${process.env.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}`
   },
   body: JSON.stringify({
     personalizations: [{
